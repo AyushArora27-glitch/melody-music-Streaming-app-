@@ -1,0 +1,179 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global default-deny safety net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Shared hardened helper primitives
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidTimestamp(ts) {
+      return ts is timestamp && ts <= request.time;
+    }
+
+    function isValidUserProfile(data, userId) {
+      return data.keys().hasAll(['userId', 'displayName', 'createdAt', 'updatedAt']) &&
+             data.keys().hasOnly(['userId', 'displayName', 'email', 'createdAt', 'updatedAt']) &&
+             data.userId is string && data.userId == userId &&
+             data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 80 &&
+             (!('email' in data) || (data.email is string && data.email.size() <= 160)) &&
+             isValidTimestamp(data.createdAt) &&
+             isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidSavedTrack(data, userId, docTrackId) {
+      return data.keys().hasAll(['userId', 'trackId', 'title', 'artist', 'album', 'durationMs', 'genre', 'explicit', 'createdAt', 'updatedAt']) &&
+             data.keys().hasOnly(['userId', 'trackId', 'title', 'artist', 'album', 'durationMs', 'artworkUrl', 'previewUrl', 'genre', 'explicit', 'createdAt', 'updatedAt']) &&
+             data.userId is string && data.userId == userId &&
+             isValidId(data.trackId) && data.trackId == docTrackId &&
+             data.title is string && data.title.size() >= 1 && data.title.size() <= 200 &&
+             data.artist is string && data.artist.size() >= 1 && data.artist.size() <= 200 &&
+             data.album is string && data.album.size() <= 200 &&
+             data.durationMs is int && data.durationMs >= 0 && data.durationMs <= 86400000 &&
+             (!('artworkUrl' in data) || (data.artworkUrl is string && data.artworkUrl.size() <= 1000)) &&
+             (!('previewUrl' in data) || (data.previewUrl is string && data.previewUrl.size() <= 1000)) &&
+             data.genre is string && data.genre.size() <= 80 &&
+             data.explicit is bool &&
+             isValidTimestamp(data.createdAt) &&
+             isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidPlaylist(data, userId) {
+      return data.keys().hasAll(['userId', 'title', 'creator', 'isPinned', 'trackCount', 'createdAt', 'updatedAt']) &&
+             data.keys().hasOnly(['userId', 'title', 'creator', 'isPinned', 'trackCount', 'createdAt', 'updatedAt']) &&
+             data.userId is string && data.userId == userId &&
+             data.title is string && data.title.size() >= 1 && data.title.size() <= 120 &&
+             data.creator is string && data.creator.size() >= 1 && data.creator.size() <= 80 &&
+             data.isPinned is bool &&
+             data.trackCount is int && data.trackCount >= 0 && data.trackCount <= 5000 &&
+             isValidTimestamp(data.createdAt) &&
+             isValidTimestamp(data.updatedAt);
+    }
+
+    // 1. User profile (PII strictly isolated to owner)
+    match /users/{userId} {
+      allow get: if isOwner(userId) && isValidId(userId);
+      allow list: if false;
+
+      allow create: if isOwner(userId) &&
+                       isValidId(userId) &&
+                       isValidUserProfile(incoming(), userId);
+
+      allow update: if isOwner(userId) &&
+                       isValidId(userId) &&
+                       isValidUserProfile(incoming(), userId) &&
+                       incoming().userId == existing().userId &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'email', 'updatedAt']);
+
+      allow delete: if isOwner(userId) && isValidId(userId);
+
+      // 2. Liked tracks subcollection
+      match /liked_tracks/{trackId} {
+        allow get: if isOwner(userId) && isValidId(trackId);
+        allow list: if isOwner(userId);
+
+        allow create: if isOwner(userId) &&
+                         isValidId(trackId) &&
+                         isValidSavedTrack(incoming(), userId, trackId);
+
+        allow update: if isOwner(userId) &&
+                         isValidId(trackId) &&
+                         isValidSavedTrack(incoming(), userId, trackId) &&
+                         incoming().userId == existing().userId &&
+                         incoming().trackId == existing().trackId &&
+                         incoming().createdAt == existing().createdAt &&
+                         incoming().diff(existing()).affectedKeys().hasOnly(['title', 'artist', 'album', 'durationMs', 'artworkUrl', 'previewUrl', 'genre', 'explicit', 'updatedAt']);
+
+        allow delete: if isOwner(userId) && isValidId(trackId);
+      }
+
+      // 3. User playlists subcollection
+      match /playlists/{playlistId} {
+        allow get: if isOwner(userId) && isValidId(playlistId);
+        allow list: if isOwner(userId);
+
+        allow create: if isOwner(userId) &&
+                         isValidId(playlistId) &&
+                         isValidPlaylist(incoming(), userId);
+
+        allow update: if isOwner(userId) &&
+                         isValidId(playlistId) &&
+                         isValidPlaylist(incoming(), userId) &&
+                         incoming().userId == existing().userId &&
+                         incoming().createdAt == existing().createdAt &&
+                         (
+                           incoming().diff(existing()).affectedKeys().hasOnly(['title', 'updatedAt']) ||
+                           incoming().diff(existing()).affectedKeys().hasOnly(['isPinned', 'updatedAt']) ||
+                           incoming().diff(existing()).affectedKeys().hasOnly(['trackCount', 'updatedAt'])
+                         );
+
+        allow delete: if isOwner(userId) && isValidId(playlistId);
+
+        // 4. Playlist tracks subcollection (Parent Gate checks parent playlist exists)
+        match /tracks/{trackId} {
+          allow get: if isOwner(userId) && isValidId(playlistId) && isValidId(trackId);
+          allow list: if isOwner(userId) && isValidId(playlistId);
+
+          allow create: if isOwner(userId) &&
+                           isValidId(playlistId) &&
+                           isValidId(trackId) &&
+                           isValidSavedTrack(incoming(), userId, trackId) &&
+                           exists(/databases/$(database)/documents/users/$(userId)/playlists/$(playlistId));
+
+          allow update: if isOwner(userId) &&
+                           isValidId(playlistId) &&
+                           isValidId(trackId) &&
+                           isValidSavedTrack(incoming(), userId, trackId) &&
+                           incoming().userId == existing().userId &&
+                           incoming().trackId == existing().trackId &&
+                           incoming().createdAt == existing().createdAt &&
+                           incoming().diff(existing()).affectedKeys().hasOnly(['title', 'artist', 'album', 'durationMs', 'artworkUrl', 'previewUrl', 'genre', 'explicit', 'updatedAt']);
+
+          allow delete: if isOwner(userId) && isValidId(playlistId) && isValidId(trackId);
+        }
+      }
+
+      // 5. Listening history subcollection (Jump Back In sync)
+      match /history/{trackId} {
+        allow get: if isOwner(userId) && isValidId(trackId);
+        allow list: if isOwner(userId);
+
+        allow create: if isOwner(userId) &&
+                         isValidId(trackId) &&
+                         isValidSavedTrack(incoming(), userId, trackId);
+
+        allow update: if isOwner(userId) &&
+                         isValidId(trackId) &&
+                         isValidSavedTrack(incoming(), userId, trackId) &&
+                         incoming().userId == existing().userId &&
+                         incoming().trackId == existing().trackId &&
+                         incoming().createdAt == existing().createdAt &&
+                         incoming().diff(existing()).affectedKeys().hasOnly(['title', 'artist', 'album', 'durationMs', 'artworkUrl', 'previewUrl', 'genre', 'explicit', 'updatedAt']);
+
+        allow delete: if isOwner(userId) && isValidId(trackId);
+      }
+    }
+  }
+}

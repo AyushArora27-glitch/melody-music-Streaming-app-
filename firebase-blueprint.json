@@ -1,0 +1,153 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "User Profile",
+      "description": "Private user account profile for Melody",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Authenticated Firebase UID"
+        },
+        "displayName": {
+          "type": "string",
+          "description": "User display name"
+        },
+        "email": {
+          "type": "string",
+          "format": "email",
+          "description": "Private email address restricted to owner"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when created"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when last updated"
+        }
+      },
+      "required": ["userId", "displayName", "createdAt", "updatedAt"]
+    },
+    "SavedTrack": {
+      "title": "Saved Track",
+      "description": "A track saved to Liked Songs, a playlist, or listening history",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Owner UID"
+        },
+        "trackId": {
+          "type": "string",
+          "description": "Canonical track identifier"
+        },
+        "title": {
+          "type": "string",
+          "description": "Track title"
+        },
+        "artist": {
+          "type": "string",
+          "description": "Track artist"
+        },
+        "album": {
+          "type": "string",
+          "description": "Album title"
+        },
+        "durationMs": {
+          "type": "integer",
+          "description": "Track duration in milliseconds"
+        },
+        "artworkUrl": {
+          "type": "string",
+          "description": "Optional remote artwork URL"
+        },
+        "previewUrl": {
+          "type": "string",
+          "description": "Optional playable preview stream URL"
+        },
+        "genre": {
+          "type": "string",
+          "description": "Primary music genre"
+        },
+        "explicit": {
+          "type": "boolean",
+          "description": "Explicit content flag"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when added"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when updated"
+        }
+      },
+      "required": ["userId", "trackId", "title", "artist", "album", "durationMs", "genre", "explicit", "createdAt", "updatedAt"]
+    },
+    "Playlist": {
+      "title": "User Playlist",
+      "description": "A user-created playlist collection",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Owner UID"
+        },
+        "title": {
+          "type": "string",
+          "description": "Playlist name"
+        },
+        "creator": {
+          "type": "string",
+          "description": "Creator display name"
+        },
+        "isPinned": {
+          "type": "boolean",
+          "description": "Whether the playlist is pinned in library"
+        },
+        "trackCount": {
+          "type": "integer",
+          "description": "Number of tracks in the playlist"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when created"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when updated"
+        }
+      },
+      "required": ["userId", "title", "creator", "isPinned", "trackCount", "createdAt", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "Private user profile document"
+    },
+    "/users/{userId}/liked_tracks/{trackId}": {
+      "schema": { "$ref": "#/entities/SavedTrack" },
+      "description": "Tracks liked by the user"
+    },
+    "/users/{userId}/playlists/{playlistId}": {
+      "schema": { "$ref": "#/entities/Playlist" },
+      "description": "User-created playlists"
+    },
+    "/users/{userId}/playlists/{playlistId}/tracks/{trackId}": {
+      "schema": { "$ref": "#/entities/SavedTrack" },
+      "description": "Tracks inside a user playlist"
+    },
+    "/users/{userId}/history/{trackId}": {
+      "schema": { "$ref": "#/entities/SavedTrack" },
+      "description": "Recently played tracks for Jump Back In sync"
+    }
+  }
+}

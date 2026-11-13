@@ -1,0 +1,6 @@
+{
+  "name": "Melody",
+  "description": "Music discovery, search, personal library, and immersive playback built in Jetpack Compose.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
